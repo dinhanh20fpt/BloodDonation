@@ -1,44 +1,47 @@
 package com.swpproject.BloodDonation.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.swpproject.BloodDonation.enums.BloodType;
-import com.swpproject.BloodDonation.enums.Role;
 import jakarta.persistence.*;
 import lombok.*;
-import lombok.experimental.FieldDefaults;
-
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
 import java.time.LocalDate;
+import java.util.Collection;
+import java.util.List;
 
 @Entity
-@Table(name = "Users")
+@Table(name = "users")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@FieldDefaults(level = AccessLevel.PRIVATE)
-public class User {
+public class User implements UserDetails {
+
     @Id
-    @Column(name = "UserID")
-    private String userId;
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private String userID;
 
-    @Column(name = "FullName")
-    private String fullName;
-
-    @Column(name = "Email", unique = true)
+    @Column(unique = true, nullable = false, name = "email")
     private String email;
+
+    @Column(name = "password")
+    private String password;
+
+    @Column(name = "FullName", nullable = false)
+    private String fullName;
 
     @Column(name = "Address")
     private String address;
 
-    @Column(name = "Password")
-    private String password;
-
     @Column(name = "Phone_number")
     private String phoneNumber;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "Role")
-    private Role role;
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
+    @JsonIgnore
+    private List<UserHasRole> userHasRoles;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "Type_Blood")
@@ -52,4 +55,37 @@ public class User {
 
     @Column(name = "Occupation")
     private String occupation;
+
+
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        return this.userHasRoles.stream().map(userHasRole ->
+                        new SimpleGrantedAuthority(userHasRole.getRole().getName()))
+                .toList();
+    }
+
+    @Override
+    public String getUsername() {
+        return "";
+    }
+    @Override
+    public boolean isAccountNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isAccountNonLocked() {
+        return true;
+    }
+
+    @Override
+    public boolean isCredentialsNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return true;
+    }
+
 }

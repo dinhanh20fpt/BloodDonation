@@ -2,13 +2,14 @@ package com.swpproject.BloodDonation.dto.request;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import lombok.Data;
+import lombok.Getter;
 
-@Data
+@Getter
 public class LoginRequest {
-    @Email
-    @NotBlank
+    @NotBlank(message = "Email must not be blank")
+    @Email(message = "Email must be valid")
     private String email;
-    @NotBlank
+
+    @NotBlank(message = "Password must not be blank")
     private String password;
 }

@@ -1,98 +1,118 @@
 package com.swpproject.BloodDonation.service;
 
 import com.swpproject.BloodDonation.dto.request.UserCreationRequest;
-import com.swpproject.BloodDonation.dto.request.UserUpdateRequest;
-import com.swpproject.BloodDonation.dto.response.UserResponse;
+import com.swpproject.BloodDonation.dto.response.UserCreationResponse;
+import com.swpproject.BloodDonation.dto.response.UserDetailResponse;
+import com.swpproject.BloodDonation.entity.Role;
 import com.swpproject.BloodDonation.entity.User;
-import com.swpproject.BloodDonation.enums.Role;
-import com.swpproject.BloodDonation.exception.AppException;
-import com.swpproject.BloodDonation.exception.ErrorCode;
-import com.swpproject.BloodDonation.mapper.UserMapper;
+import com.swpproject.BloodDonation.entity.UserHasRole;
+import com.swpproject.BloodDonation.repository.RoleRepository;
 import com.swpproject.BloodDonation.repository.UserRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.mail.MessagingException;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-
+import java.io.UnsupportedEncodingException;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Optional;
 
 @Service
+@RequiredArgsConstructor
+@Slf4j
 public class UserService {
 
-    @Autowired
-    private UserRepository userRepository;
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final RoleRepository roleRepository;
+    private final MailService mailService;
 
-    @Autowired
-    private PasswordEncoder passwordEncoder;
-
-    @Autowired
-    private InvalidatedTokenService invalidatedTokenService;
-
-    public UserResponse registerUser(UserCreationRequest userCreationRequest) {
-        if (userRepository.findByEmail(userCreationRequest.getEmail()).isPresent()) {
-            throw new AppException(ErrorCode.USER_EXISTED);
+    public UserCreationResponse createUser(UserCreationRequest request) {
+        Optional<User> byEmail = userRepository.findByEmail(request.getEmail());
+        if(byEmail.isPresent()) {
+            throw new RuntimeException("Email existed");
         }
-        User user = UserMapper.INSTANCE.toEntity(userCreationRequest);
-        user.setPassword(passwordEncoder.encode(userCreationRequest.getPassword()));
-        user.setRole(Role.USER);
-        return UserMapper.INSTANCE.toResponse(userRepository.save(user));
-    }
+        User user = User.builder()
+                .email(request.getEmail())
+                .fullName(request.getFullName())
+                .password(passwordEncoder.encode(request.getPassword()))
+                .phoneNumber(request.getPhoneNumber())
+                .address(request.getAddress())
+                .bloodType(request.getBloodType())
+                .birthday(request.getBirthday())
+                .sex(request.getSex())
+                .occupation(request.getOccupation())
+                .build();
 
-    public User findByEmailForAuthentication(String email) {
-        return userRepository.findByEmail(email)
-                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
-    }
-
-    public UserResponse findByEmail(String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
-        return UserMapper.INSTANCE.toResponse(user);
-    }
-
-    public User findEntityByUserId(String userId) {
-        return userRepository.findById(userId)
-                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
-    }
-
-    public List<UserResponse> findAll() {
-        return userRepository.findAll().stream()
-                .map(UserMapper.INSTANCE::toResponse)
-                .collect(Collectors.toList());
-    }
-
-    public UserResponse updateUser(String userId, UserUpdateRequest updateRequest, String currentUserEmail) {
-        User existingUser = findEntityByUserId(userId);
-        if (!existingUser.getEmail().equals(currentUserEmail) && !hasAdminRole(currentUserEmail)) {
-            throw new AppException(ErrorCode.UNAUTHORIZED);
+        Optional<Role> role = roleRepository.findByName("USER");
+        if(role.isEmpty()) {
+            Role newRole = Role.builder()
+                    .name("USER")
+                    .build();
+            roleRepository.save(newRole);
+            user.setUserHasRoles(List.of(UserHasRole.builder()
+                    .role(newRole)
+                    .user(user)
+                    .build()));
         }
-        UserMapper.INSTANCE.updateEntity(existingUser, updateRequest);
-        if (updateRequest.getPassword() != null) {
-            existingUser.setPassword(passwordEncoder.encode(updateRequest.getPassword()));
+
+        role.ifPresent(value -> user.setUserHasRoles(List.of(UserHasRole.builder()
+                .role(value)
+                .user(user)
+                .build())));
+        userRepository.save(user);
+
+        try {
+            mailService.sendEmail("Welcome to Blood Donation ", "Welcome, you have successfully registered an accoun ", user.getEmail());
+        } catch (MessagingException | UnsupportedEncodingException e) {
+            log.error("SendEmail failed with email: {}",user.getEmail());
+            throw new RuntimeException(e);
         }
-        return UserMapper.INSTANCE.toResponse(userRepository.save(existingUser));
+        return UserCreationResponse.builder()
+                .email(user.getEmail())
+                .fullName(user.getFullName())
+                .phoneNumber(user.getPhoneNumber())
+                .address(user.getAddress())
+                .bloodType(user.getBloodType())
+                .birthday(user.getBirthday())
+                .sex(user.getSex())
+                .occupation(user.getOccupation())
+                .build();
     }
 
-    public void deleteUser(String userId, String currentUserEmail) {
-        User user = findEntityByUserId(userId);
-        if (!user.getEmail().equals(currentUserEmail) && !hasAdminRole(currentUserEmail)) {
-            throw new AppException(ErrorCode.UNAUTHORIZED);
-        }
-        userRepository.delete(user);
+    @PreAuthorize("isAuthenticated()")
+    public UserDetailResponse getUserById( String userID) {
+        return userRepository.findById(userID)
+                .map(user -> UserDetailResponse.builder()
+                        .email(user.getEmail())
+                        .fullName(user.getFullName())
+                        .phoneNumber(user.getPhoneNumber())
+                        .address(user.getAddress())
+                        .bloodType(user.getBloodType())
+                        .birthday(user.getBirthday())
+                        .sex(user.getSex())
+                        .occupation(user.getOccupation())
+                        .build())
+                .orElseThrow(() -> new RuntimeException("User not found"));
     }
 
-    public void invalidateToken(String token) {
-        invalidatedTokenService.invalidateToken(token);
+    @PreAuthorize("hasAuthority('ADMIN')") // => ROLE_USER, ROLE_USER
+    public List<UserDetailResponse> getAllUsers(){
+        return userRepository.findAll()
+                .stream()
+                .map(user -> UserDetailResponse.builder()
+                        .email(user.getEmail())
+                        .fullName(user.getFullName())
+                        .phoneNumber(user.getPhoneNumber())
+                        .address(user.getAddress())
+                        .bloodType(user.getBloodType())
+                        .birthday(user.getBirthday())
+                        .sex(user.getSex())
+                        .occupation(user.getOccupation())
+                        .build())
+                .toList();
     }
 
-    /**
-     * Checks if a user with the given email has the ADMIN role.
-     * @param email The email of the user to check.
-     * @return true if the user is an admin, false otherwise.
-     * @throws AppException if the user is not found.
-     */
-    public boolean hasAdminRole(String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
-        return user.getRole() == Role.ADMIN;
-    }
 }
+

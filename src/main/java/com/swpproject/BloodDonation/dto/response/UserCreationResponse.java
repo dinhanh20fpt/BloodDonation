@@ -1,16 +1,17 @@
 package com.swpproject.BloodDonation.dto.response;
 
+import com.swpproject.BloodDonation.entity.Role;
 import com.swpproject.BloodDonation.enums.BloodType;
-import com.swpproject.BloodDonation.enums.Role;
-import lombok.Builder;
-import lombok.Data;
+import lombok.*;
 
 import java.time.LocalDate;
 
-@Data
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
 @Builder
-public class UserResponse {
-    private String userId;
+public class UserCreationResponse {
     private String fullName;
     private String email;
     private String phoneNumber;
